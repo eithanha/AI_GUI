@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local AI Chat</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🤖 Local AI Assistant</h1>
+        <p>Powered by Ollama • Running on your PC</p>
+      </header>
+
+      <main id="chat-container">
+        <div id="messages"></div>
+      </main>
+
+      <footer>
+        <div class="input-wrapper">
+          <input
+            type="text"
+            id="messageInput"
+            placeholder="Send a message..."
+            autocomplete="off"
+          />
+          <button id="sendButton">Send</button>
+        </div>
+      </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+  </body>
+</html>
