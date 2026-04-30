@@ -151,6 +151,18 @@
     {
       "role": "user",
       "content": "test"
+    },
+    {
+      "role": "assistant",
+      "content": "The testing continues!\n\nLet's try something different. I can send a fake error response to simulate how your auto-scroll feature would handle it...\n\n**Error: Unable to process request**\n\nThis is just a simulated error, don't worry! How do you want to handle this in your code?"
+    },
+    {
+      "role": "user",
+      "content": "hello"
+    },
+    {
+      "role": "assistant",
+      "content": "Back to normal!\n\nI'll keep sending messages as before. Let's get back into the testing phase...\n\nHello!\nTest message...\nAnother hello...\nJust testing...\nThis is just a test..."
     }
   ]
 }

@@ -35,14 +35,17 @@ def chat():
     try:
         data = request.json
         messages = data.get('messages', [])
+        sync_only = data.get('syncOnly', False)
         
-        # Save history immediately
+        # Always save history
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump({"messages": messages}, f, indent=2, ensure_ascii=False)
         
-        print(f"Saved {len(messages)} messages to history")
+        # If this is just a sync (not a new message), return early
+        if sync_only:
+            return jsonify({"status": "synced"})
         
-        # Call Ollama
+        # Otherwise, process the AI response
         response = requests.post(
             OLLAMA_URL,
             json={
@@ -56,8 +59,8 @@ def chat():
         return jsonify(response.json())
         
     except Exception as e:
-        print(f"Error in chat endpoint: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     print(f"History file location: {HISTORY_FILE}")

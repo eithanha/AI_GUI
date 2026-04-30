@@ -39,28 +39,84 @@ function scrollToBottom() {
 }
 
 // Add message to UI
+// Add message to UI AND save to history
 function addMessageToUI(role, content, save = true) {
-  const wasAtBottom = isUserAtBottom();
-
   const messageDiv = document.createElement("div");
   messageDiv.className = `message ${role}`;
   messageDiv.textContent = content;
   messagesDiv.appendChild(messageDiv);
 
-  // Auto-scroll if user was at bottom
-  if (wasAtBottom) {
-    setTimeout(() => {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }, 50);
-  } else if (role === "assistant") {
-    // Show "new messages" indicator
-    unreadCount++;
-    showUnreadIndicator();
-  }
+  // Auto-scroll
+  setTimeout(() => {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }, 50);
 
+  // Save to history if requested
   if (save) {
     conversationHistory.push({ role, content });
     saveHistory();
+
+    // Also sync to server
+    syncHistoryToServer();
+  }
+}
+
+// Sync history to server
+async function syncHistoryToServer() {
+  try {
+    await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: conversationHistory,
+        syncOnly: true, // Flag to indicate this is just syncing, not a new message
+      }),
+    });
+  } catch (error) {
+    console.log("Could not sync to server:", error);
+  }
+}
+
+// Updated sendMessage function
+async function sendMessage() {
+  const text = messageInput.value.trim();
+  if (!text) return;
+
+  messageInput.disabled = true;
+  sendButton.disabled = true;
+
+  // Add user message (saves to history)
+  addMessageToUI("user", text);
+  messageInput.value = "";
+
+  showTyping();
+
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: conversationHistory,
+      }),
+    });
+
+    const data = await response.json();
+    hideTyping();
+
+    if (data.message) {
+      // Add AI response (ALSO saves to history)
+      addMessageToUI("assistant", data.message.content);
+    } else if (data.error) {
+      addMessageToUI("assistant", "Error: " + data.error);
+    }
+  } catch (error) {
+    hideTyping();
+    addMessageToUI("assistant", "❌ Failed to connect to AI");
+    console.error(error);
+  } finally {
+    messageInput.disabled = false;
+    sendButton.disabled = false;
+    messageInput.focus();
   }
 }
 
