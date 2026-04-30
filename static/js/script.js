@@ -102,6 +102,16 @@ messageInput.addEventListener("keypress", (e) => {
   }
 });
 
-// Load history on page load
-loadHistory();
-messageInput.focus();
+async function loadHistory() {
+  try {
+    const response = await fetch("/api/history");
+    if (response.ok) {
+      const data = await response.json();
+      conversationHistory = data.messages || [];
+      // Render saved messages...
+    }
+  } catch (error) {
+    console.log("No history found, starting fresh");
+    conversationHistory = [];
+  }
+}
