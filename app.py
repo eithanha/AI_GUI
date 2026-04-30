@@ -3,73 +3,62 @@ import requests
 import json
 import os
 
-# Configuration
+app = Flask(__name__)
+
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "llama3.1:8b"
-HISTORY_FILE = 'chat_history.json'
 
-# Create Flask app FIRST
-app = Flask(__name__)
+# Use absolute path for history file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+HISTORY_FILE = os.path.join(BASE_DIR, 'chat_history.json')
 
 @app.route('/')
 def index():
-    """Serve the main page"""
     return render_template('index.html')
 
-@app.route('/api/history')
+@app.route('/api/history', methods=['GET'])
 def get_history():
-    """Load chat history from file"""
+    """Load chat history"""
     try:
         if os.path.exists(HISTORY_FILE):
             with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                return jsonify(json.load(f))
+                data = json.load(f)
+                print(f"Loaded {len(data.get('messages', []))} messages from history")
+                return jsonify(data)
         return jsonify({"messages": []})
     except Exception as e:
-        return jsonify({"messages": [], "error": str(e)})
+        print(f"Error loading history: {e}")
+        return jsonify({"messages": []})
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """Handle chat messages"""
     try:
         data = request.json
         messages = data.get('messages', [])
         
-        # Save history to file
+        # Save history immediately
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump({"messages": messages}, f, indent=2)
+            json.dump({"messages": messages}, f, indent=2, ensure_ascii=False)
         
-        # Call Ollama API
+        print(f"Saved {len(messages)} messages to history")
+        
+        # Call Ollama
         response = requests.post(
             OLLAMA_URL,
             json={
                 "model": MODEL,
                 "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": 0.7
-                }
+                "stream": False
             },
             timeout=120
         )
         
-        if response.status_code == 200:
-            return jsonify(response.json())
-        else:
-            return jsonify({
-                "error": f"Ollama returned status {response.status_code}"
-            }), 500
-            
-    except requests.exceptions.ConnectionError:
-        return jsonify({
-            "message": {
-                "content": "❌ Cannot connect to Ollama. Make sure it's running: ollama serve"
-            }
-        }), 503
+        return jsonify(response.json())
+        
     except Exception as e:
+        print(f"Error in chat endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    print("🚀 Starting Flask server...")
-    print("📍 Open http://localhost:5000 in your browser")
-    print("💡 Make sure Ollama is running: ollama serve")
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    print(f"History file location: {HISTORY_FILE}")
+    app.run(debug=True, port=5000)
