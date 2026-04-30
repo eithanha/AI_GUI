@@ -8,6 +8,127 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}"
     />
+
+    <!-- Add to header -->
+    <button
+      id="memoryBtn"
+      style="
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        padding: 8px 16px;
+        background: #333;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      "
+    >
+      🧠 Memory
+    </button>
+
+    <!-- Add modal (hidden by default) -->
+    <div
+      id="memoryModal"
+      style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 1000;
+      "
+    >
+      <div
+        style="
+          background: #2a2a2a;
+          margin: 5% auto;
+          padding: 20px;
+          width: 80%;
+          max-width: 800px;
+          border-radius: 8px;
+          max-height: 80vh;
+          display: flex;
+          flex-direction: column;
+        "
+      >
+        <h2>Long-Term Memory</h2>
+        <p style="color: #888; font-size: 0.9em">
+          Edit this file to help the AI remember important context about you.
+        </p>
+        <textarea
+          id="memoryEditor"
+          style="
+            flex: 1;
+            background: #1a1a1a;
+            color: #eee;
+            border: 1px solid #444;
+            padding: 10px;
+            font-family: monospace;
+            margin: 10px 0;
+            min-height: 400px;
+          "
+        ></textarea>
+        <div>
+          <button
+            onclick="saveMemory()"
+            style="
+              background: #19c37d;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 4px;
+              cursor: pointer;
+              margin-right: 10px;
+            "
+          >
+            Save
+          </button>
+          <button
+            onclick="closeMemoryModal()"
+            style="
+              background: #444;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 4px;
+              cursor: pointer;
+            "
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Add to your script.js
+      document.getElementById("memoryBtn").onclick = async () => {
+        const response = await fetch("/api/memory");
+        const data = await response.json();
+        document.getElementById("memoryEditor").value = data.memory;
+        document.getElementById("memoryModal").style.display = "block";
+      };
+
+      function closeMemoryModal() {
+        document.getElementById("memoryModal").style.display = "none";
+      }
+
+      async function saveMemory() {
+        const content = document.getElementById("memoryEditor").value;
+        await fetch("/api/memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        closeMemoryModal();
+        alert(
+          "Memory saved! The AI will use this context in future conversations.",
+        );
+      }
+    </script>
   </head>
   <body>
     <div class="container">
