@@ -125,16 +125,32 @@
       "role": "user"
     },
     {
+      "content": "hello",
+      "role": "user"
+    },
+    {
+      "content": "You're working on implementing an auto-scroll feature in the backend. That's a great project!\n\nI'll just keep sending these \"hello\"s and \"tests\" to simulate multiple messages coming in at once...\n\nHello\nTest\nTesting\nHello\nHello\nHello\nHello\nTest\nTesting\nTest\n\nLet me know if there's anything I can do to help with your development or testing!",
+      "role": "assistant"
+    },
+    {
+      "content": "hello",
+      "role": "user"
+    },
+    {
+      "content": "hello",
+      "role": "user"
+    },
+    {
       "role": "user",
-      "content": "hello"
+      "content": "test"
     },
     {
       "role": "assistant",
-      "content": "You're working on implementing an auto-scroll feature in the backend. That's a great project!\n\nI'll just keep sending these \"hello\"s and \"tests\" to simulate multiple messages coming in at once...\n\nHello\nTest\nTesting\nHello\nHello\nHello\nHello\nTest\nTesting\nTest\n\nLet me know if there's anything I can do to help with your development or testing!"
+      "content": "Still going strong!\n\nI'll keep sending messages, but this time with a bit more variation...\n\nHello!\nHello again!\nThis is just a test...\nAnother hello...\nJust testing...\nTest message... \nHello from the other side..."
     },
     {
       "role": "user",
-      "content": "hello"
+      "content": "test"
     }
   ]
 }
