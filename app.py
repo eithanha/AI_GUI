@@ -178,28 +178,25 @@ def parse_tool_call(text):
 
 
 def execute_tool(tool_call):
-    """Execute a tool and return results"""
     action = tool_call.get('action')
+    print(f"🔧 Executing tool: {action}")
+    print(f"   Parameters: {tool_call}")
     
     if action == 'web_search':
         query = tool_call.get('query', '')
-        print(f"🔍 Web search: {query}")
-        results = search_web(query)
-        if not results:
-            return "No web results found."
+        print(f"🔍 Searching for: {query}")
         
-        # Format results
-        formatted = f"Web search results for '{query}':\n\n"
-        for i, r in enumerate(results, 1):
-            formatted += f"{i}. {r['title']}\n   {r['snippet']}\n\n"
-        return formatted
-    
-    elif action == 'get_weather':
-        location = tool_call.get('location', 'Bangkok')
-        # You could integrate a weather API here
-        return f"Weather data for {location} would go here (integrate OpenWeather API)"
-    
-    return f"Unknown tool: {action}"
+        results = search_web(query)
+        print(f"📊 Got {len(results)} results")
+        
+        if results:
+            for i, r in enumerate(results, 1):
+                print(f"   {i}. {r['title'][:50]}...")
+        else:
+            print("   ❌ No results returned!")
+        
+        # ... rest of function
+
 
 def get_weather_data(location):
     """Get actual weather data from OpenWeatherMap (free tier)"""
@@ -268,104 +265,177 @@ def chat():
     try:
         data = request.json
         messages = data.get('messages', [])
-        
-        # Save history
         save_chat_history(messages)
         
-        # Load memory
-        long_term_memory = load_long_term_memory()
+        web_context = ""
+        if messages and messages[-1]['role'] == 'user':
+            last_msg = messages[-1]['content']
+            print(f"\n{'='*60}")
+            print(f"USER MESSAGE: {last_msg}")
+            print(f"{'='*60}")
+            
+            # Check for search keywords
+            if any(kw in last_msg.lower() for kw in ['weather', 'news', 'current', 'today', 'price', 'stock']):
+                print("🔍 TRIGGERING WEB SEARCH...")
+                
+                try:
+                    from serpapi import GoogleSearch
+                    params = {
+                        "engine": "google",
+                        "q": last_msg,
+                        "api_key": "9046503278d3fad1f6b0aca10bbfa54b909f96f94a0c8003835831a46d53a72f",
+                        "num": 3
+                    }
+                    
+                    print(f"   Query: {last_msg}")
+                    search = GoogleSearch(params)
+                    results = search.get_dict()
+                    
+                    print(f"   API Response keys: {results.keys()}")
+                    
+                    if 'organic_results' in results:
+                        organic = results['organic_results']
+                        print(f"   Found {len(organic)} results")
+                        
+                        # Build web context as REFERENCE MATERIAL (not copy-pasteable format)
+                        web_context = "\n[REFERENCE: Current web search data for context]\n"
+                        web_context += "Use this information to answer the user's question. Do NOT repeat this reference data.\n\n"
+                        
+                        for i, r in enumerate(organic[:3], 1):
+                            title = r.get('title', '')
+                            snippet = r.get('snippet', '')
+                            # Make it look like notes, not something to output
+                            web_context += f"Source {i}: {title} - {snippet}\n"
+                        
+                        web_context += "\n[End reference data]\n\n"
+                        web_context += "Now answer the user's question using the reference data above. Respond in natural language.\n"
+
+                    else:
+                        print("   ❌ No 'organic_results' in response")
+                        web_context = "\n\n[Web search returned no results]\n\n"
+                        
+                except Exception as e:
+                    print(f"   ❌ SEARCH ERROR: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    web_context = f"\n\n[Web search failed: {e}]\n\n"
+            else:
+                print("ℹ️  No search keywords detected")
         
-        # Build system prompt with tools
-        system_prompt = f"""You are a helpful AI assistant with access to tools and long-term memory.
+        # Build prompt with web context
+        long_term_memory = load_long_term_memory()
+        system_prompt = f"""{web_context}
 
-## CRITICAL INSTRUCTION - READ CAREFULLY
-When you need CURRENT or REAL-TIME information (weather, news, prices, scores, etc.), you MUST respond with EXACTLY this JSON format and NOTHING ELSE:
+You are a helpful assistant with a friendly, casual tone.
 
-{{"action": "web_search", "query": "your search terms here"}}
+PERSONALITY:
+- Use emojis occasionally 😊
+- Be concise (aim for under 3 sentences when possible)
+- Be encouraging and positive
+- Remember the user's name is Seng
 
-DO NOT say "I don't have access" or "I can't browse the web". 
-YOU HAVE ACCESS through the web_search tool. USE IT.
+CORE INSTRUCTIONS:
+1. Read the web search results above as REFERENCE material
+2. Extract the answer - DO NOT copy or repeat the reference text
+3. DO NOT output "Source 1:", "Source 2:", or reference markers
+4. Provide answers in natural, conversational English
+5. For weather queries, include both °C and °F
 
-## Examples:
+EXAMPLES:
+❌ BAD: "Source 1: Bangkok Weather - 97° 81°..."
+✅ GOOD: "It's 97°F (36°C) in Bangkok today with thunderstorms expected."
 
-User: What's the weather in Bangkok?
-You: {{"action": "web_search", "query": "Bangkok weather current"}}
+FORMATTING:
+- Use bullet points for lists
+- Bold important terms with **text**
+- Use markdown code blocks for code (with language tags)
+- Include relevant links when mentioning websites
+- Never use ALL CAPS
 
-User: Latest AI news
-You: {{"action": "web_search", "query": "latest AI news today"}}
+BEHAVIOR:
+- If you don't know, say "I don't know" - don't guess
+- Cite sources when using web results (e.g., "According to AccuWeather...")
+- Explain technical topics simply first, then offer details
+- Reference previous conversations when relevant
 
-User: Tell me about Python (general knowledge - NO search needed)
-You: Python is a programming language created by Guido van Rossum...
+CONTENT:
+- Keep responses family-friendly (no profanity)
+- Avoid politics unless specifically asked
+- Be patient and supportive if user seems frustrated
+- Stay constructive and helpful
 
-## Long-Term Memory
-{long_term_memory}
+User's question: "{last_msg}"
 
-## Tools Available:
-1. web_search - Search the web for current information
-   Format: {{"action": "web_search", "query": "search terms"}}
-   
-2. get_weather - Get weather data
-   Format: {{"action": "get_weather", "location": "city name"}}
-
-Remember: When you need current info, respond with ONLY the JSON. No extra text.
+Provide a helpful, natural response using the reference data above.
 """
 
         
-        # Prepare messages
+        print(f"\n📝 System prompt length: {len(system_prompt)} chars")
+        print(f"📝 Web context included: {len(web_context) > 0}")
+        
+        # Call Ollama
         full_messages = [{"role": "system", "content": system_prompt}] + messages
         
-        # Initial AI call
         response = requests.post(
             OLLAMA_URL,
             json={
                 "model": MODEL,
                 "messages": full_messages,
                 "stream": False,
-                "options": {"temperature": 0.3, "num_predict": 500}
+                "options": {"temperature": 0.7, "num_predict": 800}
             },
             timeout=120
         )
         
-        ai_response = response.json()
-        ai_message = ai_response["message"]["content"]
+        result = response.json()
+        ai_reply = result.get("message", {}).get("content", "")
+        print(f"\n🤖 AI Response: {ai_reply[:150]}...")
+        print(f"{'='*60}\n")
         
-        # Check if AI is requesting a tool
-        tool_call = parse_tool_call(ai_message)
-        
-        if tool_call and "action" in tool_call:
-            print(f"🛠️  AI requested tool: {tool_call}")
-            
-            # Execute the tool
-            tool_result = execute_tool(tool_call)
-            
-            # Add tool result to conversation and get final answer
-            tool_messages = full_messages + [
-                {"role": "assistant", "content": ai_message},
-                {"role": "user", "content": f"Tool result:\n{tool_result}\n\nNow provide a helpful answer to the original question using this information."}
-            ]
-            
-            # Get final response with tool data
-            final_response = requests.post(
-                OLLAMA_URL,
-                json={
-                    "model": MODEL,
-                    "messages": tool_messages,
-                    "stream": False,
-                    "options": {"temperature": 0.7, "num_predict": 800}
-                },
-                timeout=120
-            )
-            
-            return jsonify(final_response.json())
-        
-        # No tool call, return direct response
-        return jsonify(ai_response)
+        return jsonify(result)
         
     except Exception as e:
-        print(f"Chat error: {e}")
+        print(f"❌ CHAT ERROR: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/test-search')
+def test_search():
+    """Test the search function directly"""
+    query = request.args.get('q', 'Bangkok weather')
+    
+    # Test both search methods
+    print(f"Testing search for: {query}")
+    
+    # Try SerpAPI
+    try:
+        from serpapi import GoogleSearch
+        params = {
+            "engine": "google",
+            "q": query,
+            "api_key": "9046503278d3fad1f6b0aca10bbfa54b909f96f94a0c8003835831a46d53a72f",
+            "num": 3
+        }
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        
+        return jsonify({
+            "method": "SerpAPI",
+            "query": query,
+            "success": True,
+            "result_count": len(results.get("organic_results", [])),
+            "results": results.get("organic_results", [])[:3]
+        })
+    except Exception as e:
+        return jsonify({
+            "method": "SerpAPI",
+            "query": query,
+            "success": False,
+            "error": str(e)
+        })
+
 
 if __name__ == '__main__':
     print("=" * 60)
@@ -375,3 +445,5 @@ if __name__ == '__main__':
     print("🛠️  Tools: web_search, get_weather")
     print("=" * 60)
     app.run(debug=True, port=5000)
+
+
