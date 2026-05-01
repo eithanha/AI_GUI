@@ -17,6 +17,7 @@ ENV/
 # Project specific
 memory/chat_history.json
 memory/*.log
+memory/long_term_memory.md
 *.db
 .DS_Store
 
