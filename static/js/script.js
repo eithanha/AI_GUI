@@ -120,6 +120,28 @@ async function sendMessage() {
   }
 }
 
+document.getElementById("memoryBtn").onclick = async () => {
+  const response = await fetch("/api/memory");
+  const data = await response.json();
+  document.getElementById("memoryEditor").value = data.memory;
+  document.getElementById("memoryModal").style.display = "block";
+};
+
+function closeMemoryModal() {
+  document.getElementById("memoryModal").style.display = "none";
+}
+
+async function saveMemory() {
+  const content = document.getElementById("memoryEditor").value;
+  await fetch("/api/memory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  closeMemoryModal();
+  alert("Memory saved! The AI will use this context in future conversations.");
+}
+
 // Show unread messages indicator
 function showUnreadIndicator() {
   let indicator = document.getElementById("unreadIndicator");
