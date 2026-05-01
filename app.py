@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 import requests
 import json
 import os
+import re
 from datetime import datetime
 
 app = Flask(__name__)
@@ -9,16 +10,29 @@ app = Flask(__name__)
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "llama3.1:8b"
 
-# File paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(BASE_DIR, 'memory', 'chat_history.json')
 MEMORY_FILE = os.path.join(BASE_DIR, 'memory', 'long_term_memory.md')
 
-# Ensure memory directory exists
 os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
 
+# Tool definitions
+TOOLS = {
+    "web_search": {
+        "description": "Search the web for current information",
+        "parameters": {
+            "query": "Search query string"
+        }
+    },
+    "get_weather": {
+        "description": "Get current weather for a location",
+        "parameters": {
+            "location": "City name"
+        }
+    }
+}
+
 def load_long_term_memory():
-    """Load markdown memory for AI context"""
     try:
         if os.path.exists(MEMORY_FILE):
             with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
@@ -29,7 +43,6 @@ def load_long_term_memory():
         return ""
 
 def load_chat_history():
-    """Load recent chat history from JSON"""
     try:
         if os.path.exists(HISTORY_FILE):
             with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
@@ -41,7 +54,6 @@ def load_chat_history():
         return []
 
 def save_chat_history(messages):
-    """Save chat history to JSON"""
     try:
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump({
@@ -52,34 +64,113 @@ def save_chat_history(messages):
     except Exception as e:
         print(f"Error saving history: {e}")
 
+def search_web(query, num_results=3):
+    """Search web using DuckDuckGo"""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        results = []
+        for result in soup.select('.result')[:num_results]:
+            title_elem = result.select_one('.result__title')
+            snippet_elem = result.select_one('.result__snippet')
+            
+            if title_elem and snippet_elem:
+                results.append({
+                    'title': title_elem.get_text(strip=True),
+                    'snippet': snippet_elem.get_text(strip=True)
+                })
+        
+        return results
+    except Exception as e:
+        print(f"Web search error: {e}")
+        return []
+
+def parse_tool_call(text):
+    """Extract JSON tool call from AI response - more lenient parsing"""
+    text = text.strip()
+    
+    # Try direct JSON parse first
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict) and 'action' in data:
+            return data
+    except:
+        pass
+    
+    # Try to find JSON in text (AI might add extra text)
+    import re
+    
+    # Look for web_search pattern
+    web_match = re.search(r'web_search.*?query["\']\s*:\s*["\']([^"\']+)["\']', text, re.IGNORECASE)
+    if web_match:
+        return {"action": "web_search", "query": web_match.group(1)}
+    
+    # Look for any JSON-like structure
+    json_match = re.search(r'\{[^}]*"action"[^}]*\}', text, re.DOTALL)
+    if json_match:
+        try:
+            # Clean up the JSON string
+            json_str = json_match.group()
+            # Fix common issues
+            json_str = re.sub(r'(\w+):', r'"\1":', json_str)  # Add quotes to keys
+            json_str = json_str.replace("'", '"')  # Fix single quotes
+            return json.loads(json_str)
+        except:
+            pass
+    
+    # Check if AI is asking to search (even without proper JSON)
+    if any(phrase in text.lower() for phrase in [
+        "i need to search",
+        "let me search",
+        "i'll search for",
+        "searching for"
+    ]):
+        # Extract what they're searching for
+        # This is a fallback for when AI doesn't follow JSON format
+        return {"action": "web_search", "query": text[:100]}
+    
+    return None
+
+
+def execute_tool(tool_call):
+    """Execute a tool and return results"""
+    action = tool_call.get('action')
+    
+    if action == 'web_search':
+        query = tool_call.get('query', '')
+        print(f"🔍 Web search: {query}")
+        results = search_web(query)
+        if not results:
+            return "No web results found."
+        
+        # Format results
+        formatted = f"Web search results for '{query}':\n\n"
+        for i, r in enumerate(results, 1):
+            formatted += f"{i}. {r['title']}\n   {r['snippet']}\n\n"
+        return formatted
+    
+    elif action == 'get_weather':
+        location = tool_call.get('location', 'Bangkok')
+        # You could integrate a weather API here
+        return f"Weather data for {location} would go here (integrate OpenWeather API)"
+    
+    return f"Unknown tool: {action}"
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @app.route('/api/history')
 def get_history():
-    """Return chat history"""
     messages = load_chat_history()
     return jsonify({"messages": messages})
-
-@app.route('/api/memory')
-def get_memory():
-    """Return long-term memory (for viewing/editing)"""
-    memory = load_long_term_memory()
-    return jsonify({"memory": memory})
-
-@app.route('/api/memory', methods=['POST'])
-def update_memory():
-    """Update long-term memory"""
-    try:         
-        data = request.json
-        content = data.get('content', '')
-        with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -87,54 +178,109 @@ def chat():
         data = request.json
         messages = data.get('messages', [])
         
-        # Load long-term memory
-        long_term_memory = load_long_term_memory()
-        
-        # Build system prompt with memory
-        system_prompt = f"""You are a helpful AI assistant with persistent memory.
-
-## Long-term Memory
-{long_term_memory}
-
-## Instructions
-- Use the long-term memory to provide personalized, contextual responses
-- Remember details about the user's projects, preferences, and goals
-- Be concise but helpful
-- If the user mentions something that should be remembered long-term, 
-  you can suggest adding it to their memory file
-"""
-        
-        # Add system message at the beginning
-        full_messages = [
-            {"role": "system", "content": system_prompt}
-        ] + messages
-        
         # Save history
         save_chat_history(messages)
         
-        # Call Ollama
+        # Load memory
+        long_term_memory = load_long_term_memory()
+        
+        # Build system prompt with tools
+        system_prompt = f"""You are a helpful AI assistant with access to tools and long-term memory.
+
+## CRITICAL INSTRUCTION - READ CAREFULLY
+When you need CURRENT or REAL-TIME information (weather, news, prices, scores, etc.), you MUST respond with EXACTLY this JSON format and NOTHING ELSE:
+
+{{"action": "web_search", "query": "your search terms here"}}
+
+DO NOT say "I don't have access" or "I can't browse the web". 
+YOU HAVE ACCESS through the web_search tool. USE IT.
+
+## Examples:
+
+User: What's the weather in Bangkok?
+You: {{"action": "web_search", "query": "Bangkok weather current"}}
+
+User: Latest AI news
+You: {{"action": "web_search", "query": "latest AI news today"}}
+
+User: Tell me about Python (general knowledge - NO search needed)
+You: Python is a programming language created by Guido van Rossum...
+
+## Long-Term Memory
+{long_term_memory}
+
+## Tools Available:
+1. web_search - Search the web for current information
+   Format: {{"action": "web_search", "query": "search terms"}}
+   
+2. get_weather - Get weather data
+   Format: {{"action": "get_weather", "location": "city name"}}
+
+Remember: When you need current info, respond with ONLY the JSON. No extra text.
+"""
+
+        
+        # Prepare messages
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+        
+        # Initial AI call
         response = requests.post(
             OLLAMA_URL,
             json={
                 "model": MODEL,
                 "messages": full_messages,
                 "stream": False,
-                "options": {
-                    "temperature": 0.7,
-                    "num_predict": 1000
-                }
+                "options": {"temperature": 0.3, "num_predict": 500}
             },
             timeout=120
         )
         
-        return jsonify(response.json())
+        ai_response = response.json()
+        ai_message = ai_response["message"]["content"]
+        
+        # Check if AI is requesting a tool
+        tool_call = parse_tool_call(ai_message)
+        
+        if tool_call and "action" in tool_call:
+            print(f"🛠️  AI requested tool: {tool_call}")
+            
+            # Execute the tool
+            tool_result = execute_tool(tool_call)
+            
+            # Add tool result to conversation and get final answer
+            tool_messages = full_messages + [
+                {"role": "assistant", "content": ai_message},
+                {"role": "user", "content": f"Tool result:\n{tool_result}\n\nNow provide a helpful answer to the original question using this information."}
+            ]
+            
+            # Get final response with tool data
+            final_response = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": MODEL,
+                    "messages": tool_messages,
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 800}
+                },
+                timeout=120
+            )
+            
+            return jsonify(final_response.json())
+        
+        # No tool call, return direct response
+        return jsonify(ai_response)
         
     except Exception as e:
+        print(f"Chat error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    print("🚀 Starting AI Chat with Hybrid Memory System")
-    print(f"📁 Chat history: {HISTORY_FILE}")
-    print(f"🧠 Long-term memory: {MEMORY_FILE}")
-    print("📍 Open http://localhost:5000")
+    print("=" * 60)
+    print("🚀 AI Chat with Tool Calling")
+    print("=" * 60)
+    print("📍 http://localhost:5000")
+    print("🛠️  Tools: web_search, get_weather")
+    print("=" * 60)
     app.run(debug=True, port=5000)
