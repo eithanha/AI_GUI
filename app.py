@@ -65,7 +65,43 @@ def save_chat_history(messages):
         print(f"Error saving history: {e}")
 
 def search_web(query, num_results=3):
-    """Search web using DuckDuckGo"""
+    """Search web using SerpAPI (you already have an API key!)"""
+    try:
+        from serpapi import GoogleSearch
+        
+        # Use your existing SerpAPI key
+        API_KEY = "9046503278d3fad1f6b0aca10bbfa54b909f96f94a0c8003835831a46d53a72f"
+        
+        params = {
+            "engine": "google",
+            "q": query,
+            "api_key": API_KEY,
+            "num": num_results
+        }
+        
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        
+        # Extract organic results
+        organic_results = results.get("organic_results", [])
+        
+        formatted_results = []
+        for result in organic_results[:num_results]:
+            formatted_results.append({
+                'title': result.get('title', ''),
+                'snippet': result.get('snippet', ''),
+                'link': result.get('link', '')
+            })
+        
+        return formatted_results
+        
+    except Exception as e:
+        print(f"SerpAPI error: {e}")
+        # Fallback to DuckDuckGo if SerpAPI fails
+        return search_web_duckduckgo(query, num_results)
+
+def search_web_duckduckgo(query, num_results=3):
+    """Fallback DuckDuckGo search"""
     try:
         import requests
         from bs4 import BeautifulSoup
@@ -84,13 +120,15 @@ def search_web(query, num_results=3):
             if title_elem and snippet_elem:
                 results.append({
                     'title': title_elem.get_text(strip=True),
-                    'snippet': snippet_elem.get_text(strip=True)
+                    'snippet': snippet_elem.get_text(strip=True),
+                    'link': ''
                 })
         
         return results
     except Exception as e:
-        print(f"Web search error: {e}")
+        print(f"DuckDuckGo error: {e}")
         return []
+
 
 def parse_tool_call(text):
     """Extract JSON tool call from AI response - more lenient parsing"""
@@ -162,6 +200,59 @@ def execute_tool(tool_call):
         return f"Weather data for {location} would go here (integrate OpenWeather API)"
     
     return f"Unknown tool: {action}"
+
+def get_weather_data(location):
+    """Get actual weather data from OpenWeatherMap (free tier)"""
+    try:
+        # Get free API key from: https://openweathermap.org/api
+        API_KEY = "a9976bdf9f381df5ed33b597d539b707"  # Free tier: 1000 calls/day
+        
+        url = "https://api.openweathermap.org/data/2.5/weather"
+        params = {
+            "q": location,
+            "appid": API_KEY,
+            "units": "metric"
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        if response.status_code == 200:
+            return {
+                "location": data["name"],
+                "temp": data["main"]["temp"],
+                "feels_like": data["main"]["feels_like"],
+                "humidity": data["main"]["humidity"],
+                "description": data["weather"][0]["description"],
+                "wind_speed": data["wind"]["speed"]
+            }
+        return None
+    except Exception as e:
+        print(f"Weather API error: {e}")
+        return None
+
+def execute_tool(tool_call):
+    action = tool_call.get('action')
+    
+    if action == 'web_search':
+        # ... existing code ...
+        pass
+    
+    elif action == 'get_weather':
+        location = tool_call.get('location', 'Bangkok')
+        weather = get_weather_data(location)
+        
+        if weather:
+            return f"""Current weather in {weather['location']}:
+Temperature: {weather['temp']}°C (feels like {weather['feels_like']}°C)
+Conditions: {weather['description']}
+Humidity: {weather['humidity']}%
+Wind: {weather['wind_speed']} m/s"""
+        else:
+            # Fallback to web search
+            results = search_web(f"{location} weather")
+            return format_search_results(results, f"{location} weather")
+
 
 @app.route('/')
 def index():
